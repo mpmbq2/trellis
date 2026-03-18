@@ -1,0 +1,17 @@
+[project]
+name = "trellis"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "Matthew McCabe", email = "mpmbq2@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = []
+
+[project.scripts]
+trellis = "trellis:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
