@@ -1,0 +1,4 @@
+    def exists(self) -> bool:
+        """Check if the dataset exists in storage."""
+        import os
+        return os.path.exists(self.path)

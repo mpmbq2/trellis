@@ -1,0 +1,89 @@
+<Context>
+You receive a selection in neovim that you need to replace with new code.
+The selection's contents may contain notes, incorporate the notes every time if there are some.
+consider the context of the selection and what you are suppose to be implementing
+<SELECTION_LOCATION>
+range(point(39,1),point(45,1))
+</SELECTION_LOCATION>
+<SELECTION_CONTENT>
+    @abstractmethod
+    def exists(self) -> bool:
+        """Check if the dataset exists in storage."""
+        raise NotImplementedError(
+            "Storage engines will be implemented in a future phase."
+        )
+
+</SELECTION_CONTENT>
+<FILE_CONTAINING_SELECTION>
+from abc import ABC, abstractmethod
+from typing import Any, Literal
+
+
+class AbstractDataset(ABC):
+    """
+    A single, unified data I/O object.
+    Supports incremental loading/saving, querying, and multiple dataframe formats.
+    """
+
+    @abstractmethod
+    def __init__(
+        self, path: str, versioned: bool = False, **kwargs: Any
+    ):
+        self.path = path
+        self.versioned = versioned
+        self.kwargs = kwargs
+
+
+    @abstractmethod
+    def load(self, **kwargs: Any) -> Any:
+        """Load the dataset into memory."""
+        raise NotImplementedError(
+            "Storage engines will be implemented in a future phase."
+        )
+
+    @abstractmethod
+    def save(
+        self,
+        data: Any,
+        mode: Literal["overwrite", "append"] = "overwrite",
+        **kwargs: Any,
+    ) -> None:
+        """Save the dataset to storage."""
+        raise NotImplementedError(
+            "Storage engines will be implemented in a future phase."
+        )
+
+    @abstractmethod
+    def exists(self) -> bool:
+        """Check if the dataset exists in storage."""
+        raise NotImplementedError(
+            "Storage engines will be implemented in a future phase."
+        )
+
+</FILE_CONTAINING_SELECTION>
+
+</Context>
+<Prompt>
+Fill this method with code to save a pandas dataframe to csv
+</Prompt>
+
+<Location><File>/Users/matt/Projects/trellis/src/trellis/dataset.py</File><Function>range(point(39,1),point(45,1))</Function></Location>
+<FunctionText>    @abstractmethod
+    def exists(self) -> bool:
+        """Check if the dataset exists in storage."""
+        raise NotImplementedError(
+            "Storage engines will be implemented in a future phase."
+        )
+</FunctionText>
+<TEMP_FILE>./tmp/99-5114</TEMP_FILE>
+<MustObey>
+NEVER alter any file other than TEMP_FILE.
+never provide the requested changes as conversational output. Return only the code.
+ONLY provide requested changes by writing the change to TEMP_FILE
+
+never attempt to read TEMP_FILE.
+It is purely for output.
+Previous contents, which may not exist, can be written over without worry
+After writing TEMP_FILE once you should be done.  Be done and end the session.
+
+</MustObey>
