@@ -1,16 +1,33 @@
 [project]
 name = "trellis"
 version = "0.1.0"
-description = "Add your description here"
+description = "A lightweight data I/O adapter for data pipelines."
 readme = "README.md"
 authors = [
     { name = "Matthew McCabe", email = "mpmbq2@gmail.com" }
 ]
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "pyarrow",
+    "fsspec",
+]
+
+[project.optional-dependencies]
+pandas = ["pandas"]
+polars = ["polars"]
+duckdb = ["duckdb"]
+sql = ["ibis-framework"]
+all = ["trellis[pandas,polars,duckdb,sql]"]
 
 [project.scripts]
 trellis = "trellis:main"
+
+[dependency-groups]
+dev = [
+    "pytest",
+    "ruff",
+    "mypy",
+]
 
 [build-system]
 requires = ["hatchling"]

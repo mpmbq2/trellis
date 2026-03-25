@@ -8,3 +8,6 @@ wheels/
 
 # Virtual environments
 .venv
+
+# Editor/AI temp files
+tmp/
