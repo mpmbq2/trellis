@@ -1,17 +1,43 @@
 from __future__ import annotations
 
-from abc import ABC
+from abc import ABC, abstractmethod
+from typing import Any
+
+# ------------------------------------------------------------------
+# AbstractDataset
+# ------------------------------------------------------------------
 
 
 class AbstractDataset(ABC):
-    """Abstract base class for dataset I/O operations in data pipelines.
+    """Abstract base class for dataset I/O in data pipelines.
 
-    This class provides a universal interface for all datasets, allowing
-    pipeline developers to abstract away I/O implementation details.
-
-    Concrete subclasses should be registered via the ``@AbstractDataset.register``
-    decorator so they can be instantiated through the factory method
-    ``AbstractDataset.create()``.
+    Subclasses implement :meth:`load`, :meth:`save`, and :meth:`exists`.
+    Instantiate concrete classes directly (e.g. ``CSVDataset(...)``).
     """
 
-    pass
+    def __init__(self, *, location: str | None = None) -> None:
+        """Initialize the dataset.
+
+        Args:
+            location: Optional address for the data (path, URI, etc.).
+                Subclasses may require additional constructor arguments.
+        """
+        self.location = location
+
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__}(location={self.location!r})"
+
+    @abstractmethod
+    def load(self) -> Any:
+        """Load data from the dataset location."""
+        ...
+
+    @abstractmethod
+    def save(self, data: Any) -> None:
+        """Save *data* to the dataset location."""
+        ...
+
+    @abstractmethod
+    def exists(self) -> bool:
+        """Return whether the dataset is present at its location."""
+        ...
