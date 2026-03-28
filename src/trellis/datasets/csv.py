@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Any, Literal, cast
 
+import duckdb
 import pandas as pd  # type: ignore[import-untyped]
 import polars as pl
 from polars import LazyFrame
@@ -10,6 +12,11 @@ import pyarrow as pa  # type: ignore[import-untyped]
 import pyarrow.csv as pa_csv  # type: ignore[import-untyped]
 
 from trellis.datasets.abstract import AbstractDataset
+
+
+def _sql_string_literal(value: str) -> str:
+    """Return *value* as a single-quoted SQL string literal (escaping quotes)."""
+    return "'" + value.replace("'", "''") + "'"
 
 
 @AbstractDataset.register("csv")
@@ -207,6 +214,81 @@ class CSVDataset(AbstractDataset):
 
         except Exception as e:
             raise RuntimeError(f"Failed to save CSV to {self._path!r}: {e}") from e
+
+    def query(self, sql: str, as_type: str = "polars") -> pd.DataFrame | pl.DataFrame:
+        """Run a DuckDB SQL query against this CSV file.
+
+        Pass a SQL string that uses the placeholder ``{dataset}`` in a ``FROM``
+        clause. It is replaced with a ``read_csv(...)`` call using this dataset's
+        path, delimiter, header, and encoding, so DuckDB can project or filter
+        without first loading the whole file into a separate relation.
+
+        Example::
+
+            SELECT name, age FROM {dataset} WHERE age > 28
+
+        Args:
+            sql: SQL containing ``FROM {dataset}`` (see :func:`str.format`).
+            as_type: ``"polars"`` (default) or ``"pandas"`` for the result type.
+
+        Returns:
+            Query result as a polars or pandas DataFrame.
+
+        Raises:
+            ValueError: If *as_type* is invalid, the path is not set, *sql* lacks
+                ``FROM {dataset}``, or *sql* has invalid format placeholders.
+            FileNotFoundError: If the file does not exist.
+            RuntimeError: If DuckDB fails to execute the query.
+        """
+        if as_type not in ("polars", "pandas"):
+            raise ValueError(f"as_type must be 'polars' or 'pandas', got {as_type!r}")
+
+        if self._path is None:
+            raise ValueError("Path must be specified to query a dataset")
+
+        if not self.exists():
+            raise FileNotFoundError(f"CSV file not found: {self._path}")
+
+        # Require FROM {dataset} placeholder for read substitution.
+        if not re.search(r"(?i)FROM\s+\{dataset\}", sql):
+            raise ValueError(
+                'Query must include the placeholder "FROM {dataset}" so the CSV file '
+                "can be substituted (e.g. "
+                "'SELECT col1, col2 FROM {dataset} WHERE age > 0'). "
+                "Use literal {dataset} exactly; other braces in SQL must be doubled "
+                "as {{ and }} when using str.format rules."
+            )
+
+        path_abs = str(Path(self._path).resolve())
+        path_lit = _sql_string_literal(path_abs)
+        delim_lit = _sql_string_literal(self._delimiter)
+        # Polars uses "utf8"; DuckDB's CSV reader expects names like "utf-8".
+        norm = self._normalize_encoding(self._encoding)
+        duck_encoding = "utf-8" if norm in ("utf8", "utf8-lossy") else self._encoding
+        encoding_lit = _sql_string_literal(duck_encoding)
+        header_sql = "true" if self._has_header else "false"
+        read_expr = (
+            f"read_csv({path_lit}, delim={delim_lit}, "
+            f"header={header_sql}, encoding={encoding_lit})"
+        )
+
+        try:
+            full_sql = sql.format(dataset=read_expr)
+        except KeyError as e:
+            raise ValueError(
+                "Invalid query string for .format(): only the {dataset} placeholder "
+                "is supported; escape any other braces as {{ and }}."
+            ) from e
+
+        try:
+            relation = duckdb.sql(full_sql)
+            if as_type == "pandas":
+                return relation.df()
+            return relation.pl()
+        except Exception as e:
+            raise RuntimeError(
+                f"Failed to query CSV at {self._path!r} with DuckDB: {e}"
+            ) from e
 
     def exists(self) -> bool:
         """Check if the CSV file exists.

@@ -508,22 +508,12 @@ name = "trellis"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "duckdb" },
     { name = "fsspec" },
+    { name = "ibis-framework" },
     { name = "pandas" },
     { name = "polars" },
     { name = "pyarrow" },
-]
-
-[package.optional-dependencies]
-all = [
-    { name = "duckdb" },
-    { name = "ibis-framework" },
-]
-duckdb = [
-    { name = "duckdb" },
-]
-sql = [
-    { name = "ibis-framework" },
 ]
 
 [package.dev-dependencies]
@@ -535,13 +525,12 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "duckdb", marker = "extra == 'duckdb'" },
+    { name = "duckdb" },
     { name = "fsspec" },
-    { name = "ibis-framework", marker = "extra == 'sql'" },
+    { name = "ibis-framework" },
     { name = "pandas" },
     { name = "polars" },
     { name = "pyarrow" },
-    { name = "trellis", extras = ["duckdb", "sql"], marker = "extra == 'all'" },
 ]
 
 [package.metadata.requires-dev]

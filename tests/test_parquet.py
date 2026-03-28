@@ -253,6 +253,80 @@ class TestParquetDatasetIO:
             ds.load()
 
 
+class TestParquetDatasetQuery:
+    """Test ParquetDataset.query() with DuckDB."""
+
+    def test_query_returns_polars(self) -> None:
+        """Test query returns polars DataFrame by default."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = str(Path(tmpdir) / "test.parquet")
+
+            df_original = pl.DataFrame(
+                {
+                    "name": ["Alice", "Bob", "Charlie"],
+                    "age": [25, 30, 35],
+                }
+            )
+            ds = ParquetDataset(path=path)
+            ds.save(df_original)
+
+            out = ds.query("SELECT * FROM {dataset} WHERE age > 28")
+            assert isinstance(out, pl.DataFrame)
+            assert out.shape == (2, 2)
+            assert set(out["name"].to_list()) == {"Bob", "Charlie"}
+
+    def test_query_returns_pandas(self) -> None:
+        """Test query returns pandas DataFrame when as_type is pandas."""
+        import pandas as pd
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = str(Path(tmpdir) / "test.parquet")
+
+            df_original = pl.DataFrame({"col1": [1, 2, 3], "col2": ["a", "b", "c"]})
+            ds = ParquetDataset(path=path)
+            ds.save(df_original)
+
+            out = ds.query("SELECT * FROM {dataset} WHERE col1 = 2", as_type="pandas")
+            assert isinstance(out, pd.DataFrame)
+            assert out.shape == (1, 2)
+            assert out.iloc[0]["col2"] == "b"
+
+    def test_query_requires_from_dataset_placeholder(self) -> None:
+        """Test query without FROM {dataset} raises ValueError."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = str(Path(tmpdir) / "test.parquet")
+            ds = ParquetDataset(path=path)
+            ds.save(pl.DataFrame({"a": [1]}))
+
+            with pytest.raises(ValueError, match=r"FROM \{dataset\}"):
+                ds.query("SELECT * FROM t")
+
+    def test_query_invalid_as_type_raises(self) -> None:
+        """Test query with invalid as_type raises ValueError."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = str(Path(tmpdir) / "test.parquet")
+            ds = ParquetDataset(path=path)
+            ds.save(pl.DataFrame({"a": [1]}))
+
+            with pytest.raises(ValueError, match="as_type must be"):
+                ds.query("SELECT * FROM {dataset}", as_type="spark")
+
+    def test_query_nonexistent_file_raises(self) -> None:
+        """Test query on missing file raises FileNotFoundError."""
+        ds = ParquetDataset(path="/nonexistent/path/file.parquet")
+
+        with pytest.raises(FileNotFoundError):
+            ds.query("SELECT * FROM {dataset}")
+
+    def test_query_without_path_raises(self) -> None:
+        """Test query without path raises ValueError."""
+        ds = ParquetDataset(path="x.parquet")
+        ds._path = None
+
+        with pytest.raises(ValueError, match="Path must be specified"):
+            ds.query("SELECT * FROM {dataset}")
+
+
 class TestParquetDatasetFactory:
     """Test ParquetDataset factory pattern."""
 
