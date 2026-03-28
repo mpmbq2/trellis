@@ -12,12 +12,12 @@ dependencies = [
     "fsspec",
     "polars",
     "pandas",
+    "duckdb",
+    "ibis-framework",
 ]
 
 [project.optional-dependencies]
-duckdb = ["duckdb"]
-sql = ["ibis-framework"]
-all = ["trellis[duckdb,sql]"]
+all = []
 
 [project.scripts]
 trellis = "trellis:main"
