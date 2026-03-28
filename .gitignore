@@ -11,3 +11,6 @@ wheels/
 
 # Editor/AI temp files
 tmp/
+
+# ignore vscode settings
+.vscode/
