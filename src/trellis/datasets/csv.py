@@ -1,34 +1,15 @@
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 from typing import Any, Literal, cast
 
+import pandas as pd  # type: ignore[import-untyped]
+import polars as pl
+from polars import LazyFrame
 import pyarrow as pa  # type: ignore[import-untyped]
 import pyarrow.csv as pa_csv  # type: ignore[import-untyped]
 
 from trellis.datasets.abstract import AbstractDataset
-
-# Check for optional dependencies
-if sys.version_info >= (3, 10):
-    from importlib.util import find_spec
-else:
-    from importlib.util import find_spec  # type: ignore[attr-defined]
-
-HAS_POLARS = find_spec("polars") is not None
-HAS_PANDAS = find_spec("pandas") is not None
-
-if HAS_POLARS:
-    import polars as pl  # type: ignore[import-not-found]
-    from polars import LazyFrame
-else:
-    pl = None  # type: ignore[misc,assignment]
-    LazyFrame = None  # type: ignore[misc,assignment]
-
-if HAS_PANDAS:
-    import pandas as pd  # type: ignore[import-untyped]
-else:
-    pd = None  # type: ignore[misc,assignment]
 
 
 @AbstractDataset.register("csv")
@@ -113,25 +94,12 @@ class CSVDataset(AbstractDataset):
             A polars DataFrame/LazyFrame or pandas DataFrame containing the CSV data.
 
         Raises:
-            ImportError: If the requested library is not installed.
             ValueError: If as_type is not "polars" or "pandas".
             FileNotFoundError: If the file does not exist.
             RuntimeError: If there's an error reading the file.
         """
         if as_type not in ("polars", "pandas"):
             raise ValueError(f"as_type must be 'polars' or 'pandas', got {as_type!r}")
-
-        if as_type == "polars" and not HAS_POLARS:
-            raise ImportError(
-                "polars is required to load CSVDataset as polars. "
-                "Install with: pip install trellis[polars] or pip install polars"
-            )
-
-        if as_type == "pandas" and not HAS_PANDAS:
-            raise ImportError(
-                "pandas is required to load CSVDataset as pandas. "
-                "Install with: pip install trellis[pandas] or pip install pandas"
-            )
 
         if self._path is None:
             raise ValueError("Path must be specified to load a dataset")
@@ -140,47 +108,30 @@ class CSVDataset(AbstractDataset):
             raise FileNotFoundError(f"CSV file not found: {self._path}")
 
         try:
-            if as_type == "polars":
-                normalized_encoding = cast(
-                    Literal["utf8", "utf8-lossy"],
-                    self._normalize_encoding(self._encoding),
-                )
-                if lazy:
-                    return pl.scan_csv(  # pyright: ignore[reportOptionalMemberAccess]
-                        self._path,
-                        separator=self._delimiter,
-                        has_header=self._has_header,
-                        encoding=normalized_encoding,
-                    )
-                else:
-                    return pl.read_csv(  # pyright: ignore[reportOptionalMemberAccess]
-                        self._path,
-                        separator=self._delimiter,
-                        has_header=self._has_header,
-                        encoding=normalized_encoding,
-                    )
-            else:
-                parse_options = pa_csv.ParseOptions(
-                    delimiter=self._delimiter,
-                )
-
-                read_options = pa_csv.ReadOptions(
-                    use_threads=True,
-                    encoding=self._encoding,
-                    autogenerate_column_names=not self._has_header,
-                )
-
-                table = pa_csv.read_csv(
+            normalized_encoding = cast(
+                Literal["utf8", "utf8-lossy"],
+                self._normalize_encoding(self._encoding),
+            )
+            if lazy:
+                return pl.scan_csv(
                     self._path,
-                    parse_options=parse_options,
-                    read_options=read_options,
+                    separator=self._delimiter,
+                    has_header=self._has_header,
+                    encoding=normalized_encoding,
                 )
-                return table.to_pandas()
-
+            df = pl.read_csv(
+                self._path,
+                separator=self._delimiter,
+                has_header=self._has_header,
+                encoding=normalized_encoding,
+            )
+            if as_type == "pandas":
+                return df.to_pandas()
+            return df
         except Exception as e:
             raise RuntimeError(f"Failed to load CSV from {self._path!r}: {e}") from e
 
-    def lazy_load(self) -> LazyFrame:  # type: ignore[override]
+    def lazy_load(self) -> LazyFrame:
         """Return a Polars LazyFrame for deferred execution.
 
         This enables query optimization and memory-efficient processing
@@ -190,16 +141,9 @@ class CSVDataset(AbstractDataset):
             A Polars LazyFrame representing the CSV data.
 
         Raises:
-            ImportError: If polars is not installed.
             ValueError: If path is not specified.
             FileNotFoundError: If the file does not exist.
         """
-        if not HAS_POLARS:
-            raise ImportError(
-                "polars is required to use lazy_load(). "
-                "Install with: pip install trellis[polars] or pip install polars"
-            )
-
         if self._path is None:
             raise ValueError("Path must be specified to load a dataset")
 
@@ -209,7 +153,7 @@ class CSVDataset(AbstractDataset):
         normalized_encoding = cast(
             Literal["utf8", "utf8-lossy"], self._normalize_encoding(self._encoding)
         )
-        return pl.scan_csv(  # pyright: ignore[reportOptionalMemberAccess]
+        return pl.scan_csv(
             self._path,
             separator=self._delimiter,
             has_header=self._has_header,
@@ -225,17 +169,15 @@ class CSVDataset(AbstractDataset):
             data: A polars or pandas DataFrame to save.
 
         Raises:
-            ImportError: If required libraries are not installed.
             TypeError: If data is not a polars or pandas DataFrame.
             RuntimeError: If there's an error writing the file.
         """
         if self._path is None:
             raise ValueError("Path must be specified to save a dataset")
 
-        # Detect and convert to pyarrow table
-        if HAS_POLARS and isinstance(data, pl.DataFrame):  # pyright: ignore[reportOptionalMemberAccess]
+        if isinstance(data, pl.DataFrame):
             table = data.to_arrow()
-        elif HAS_PANDAS and isinstance(data, pd.DataFrame):  # pyright: ignore[reportOptionalMemberAccess]
+        elif isinstance(data, pd.DataFrame):
             table = pa.Table.from_pandas(data)
         else:
             raise TypeError(
