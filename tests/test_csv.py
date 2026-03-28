@@ -220,8 +220,8 @@ class TestCSVDatasetIO:
 
             assert df_loaded.shape == (3, 3)
             assert len(df_loaded.columns) == 3
-            # PyArrow auto-generates column names
-            assert "f0" in df_loaded.columns
+            # Polars auto-generates column names like column_1, column_2, column_3
+            assert "column_1" in df_loaded.columns
 
     def test_exists_returns_true_for_existing_file(self) -> None:
         """Test exists() returns True for existing file."""
@@ -438,3 +438,123 @@ class TestCSVDatasetRoundTrip:
 
             assert isinstance(df_polars, pl.DataFrame)
             assert df_polars.shape == (3, 2)
+
+
+class TestCSVDatasetLazyLoading:
+    """Test CSVDataset lazy loading functionality."""
+
+    def test_lazy_load_returns_lazyframe(self) -> None:
+        """Test that lazy_load() returns a polars LazyFrame."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = str(Path(tmpdir) / "test.csv")
+
+            df_original = pl.DataFrame(
+                {
+                    "name": ["Alice", "Bob", "Charlie"],
+                    "age": [25, 30, 35],
+                }
+            )
+
+            ds = CSVDataset(path=path)
+            ds.save(df_original)
+
+            lf = ds.lazy_load()
+
+            assert isinstance(lf, pl.LazyFrame)
+
+    def test_lazy_load_collect_produces_correct_data(self) -> None:
+        """Test that collecting lazy load produces correct DataFrame."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = str(Path(tmpdir) / "test.csv")
+
+            df_original = pl.DataFrame(
+                {
+                    "name": ["Alice", "Bob", "Charlie"],
+                    "age": [25, 30, 35],
+                }
+            )
+
+            ds = CSVDataset(path=path)
+            ds.save(df_original)
+
+            lf = ds.lazy_load()
+            df_loaded = lf.collect()
+
+            assert isinstance(df_loaded, pl.DataFrame)
+            assert df_loaded.shape == df_original.shape
+            assert list(df_loaded.columns) == list(df_original.columns)
+
+    def test_lazy_load_with_filter(self) -> None:
+        """Test that lazy load supports filter operations before collection."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = str(Path(tmpdir) / "test.csv")
+
+            df_original = pl.DataFrame(
+                {
+                    "name": ["Alice", "Bob", "Charlie"],
+                    "age": [25, 30, 35],
+                }
+            )
+
+            ds = CSVDataset(path=path)
+            ds.save(df_original)
+
+            df_filtered = ds.lazy_load().filter(pl.col("age") > 25).collect()
+
+            assert df_filtered.shape[0] == 2
+            assert all(df_filtered["age"] > 25)
+
+    def test_load_lazy_true_returns_lazyframe(self) -> None:
+        """Test that load(lazy=True) returns a polars LazyFrame."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = str(Path(tmpdir) / "test.csv")
+
+            df_original = pl.DataFrame(
+                {
+                    "col1": [1, 2, 3],
+                    "col2": ["a", "b", "c"],
+                }
+            )
+
+            ds = CSVDataset(path=path)
+            ds.save(df_original)
+
+            result = ds.load(lazy=True)
+
+            assert isinstance(result, pl.LazyFrame)
+
+    def test_load_lazy_true_collect_equals_eager(self) -> None:
+        """Test that lazy load collection matches eager load."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = str(Path(tmpdir) / "test.csv")
+
+            df_original = pl.DataFrame(
+                {
+                    "a": [10, 20, 30],
+                    "b": ["x", "y", "z"],
+                }
+            )
+
+            ds = CSVDataset(path=path)
+            ds.save(df_original)
+
+            df_eager = ds.load()
+            df_lazy = ds.load(lazy=True).collect()
+
+            assert df_eager.shape == df_lazy.shape
+            assert list(df_eager.columns) == list(df_lazy.columns)
+
+    def test_lazy_load_without_path_raises_error(self) -> None:
+        """Test lazy_load without path raises ValueError."""
+        ds = CSVDataset(path="test.csv")
+        ds._path = None
+
+        with pytest.raises(ValueError, match="Path must be specified"):
+            ds.lazy_load()
+
+    def test_lazy_load_nonexistent_file_raises_error(self) -> None:
+        """Test lazy_load on non-existent file raises FileNotFoundError."""
+        ds = CSVDataset(path="/nonexistent/path/file.csv")
+
+        with pytest.raises(FileNotFoundError):
+            ds.lazy_load()

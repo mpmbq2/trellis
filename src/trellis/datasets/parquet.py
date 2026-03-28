@@ -20,8 +20,10 @@ HAS_PANDAS = find_spec("pandas") is not None
 
 if HAS_POLARS:
     import polars as pl  # type: ignore[import-not-found]
+    from polars import LazyFrame
 else:
     pl = None  # type: ignore[misc,assignment]
+    LazyFrame = None  # type: ignore[misc,assignment]
 
 if HAS_PANDAS:
     import pandas as pd  # type: ignore[import-untyped]
@@ -90,14 +92,16 @@ class ParquetDataset(AbstractDataset):
     # I/O operations
     # ------------------------------------------------------------------
 
-    def load(self, as_type: str = "polars") -> Any:
+    def load(self, as_type: str = "polars", lazy: bool = False) -> Any:
         """Load data from the Parquet file.
 
         Args:
             as_type: Output format - "polars" (default) or "pandas".
+            lazy: If True and as_type="polars", return a LazyFrame for
+                deferred execution (default: False).
 
         Returns:
-            A polars or pandas DataFrame containing the Parquet data.
+            A polars DataFrame/LazyFrame or pandas DataFrame containing the Parquet data.
 
         Raises:
             ImportError: If the requested library is not installed.
@@ -127,22 +131,56 @@ class ParquetDataset(AbstractDataset):
             raise FileNotFoundError(f"Parquet file not found: {self._path}")
 
         try:
-            # Read Parquet using pyarrow
-            table = pq.read_table(
-                self._path,
-                use_threads=self._use_threads,
-            )
-
-            # Convert to requested type
             if as_type == "polars":
-                return pl.DataFrame(table)  # pyright: ignore[reportOptionalMemberAccess]
-            else:  # pandas
+                if lazy:
+                    return pl.scan_parquet(  # pyright: ignore[reportOptionalMemberAccess]
+                        self._path,
+                    )
+                else:
+                    return pl.read_parquet(  # pyright: ignore[reportOptionalMemberAccess]
+                        self._path,
+                    )
+            else:
+                table = pq.read_table(
+                    self._path,
+                    use_threads=self._use_threads,
+                )
                 return table.to_pandas()
 
         except Exception as e:
             raise RuntimeError(
                 f"Failed to load Parquet from {self._path!r}: {e}"
             ) from e
+
+    def lazy_load(self) -> LazyFrame:  # type: ignore[override]
+        """Return a Polars LazyFrame for deferred execution.
+
+        This enables query optimization and memory-efficient processing
+        of large Parquet files.
+
+        Returns:
+            A Polars LazyFrame representing the Parquet data.
+
+        Raises:
+            ImportError: If polars is not installed.
+            ValueError: If path is not specified.
+            FileNotFoundError: If the file does not exist.
+        """
+        if not HAS_POLARS:
+            raise ImportError(
+                "polars is required to use lazy_load(). "
+                "Install with: pip install trellis[polars] or pip install polars"
+            )
+
+        if self._path is None:
+            raise ValueError("Path must be specified to load a dataset")
+
+        if not self.exists():
+            raise FileNotFoundError(f"Parquet file not found: {self._path}")
+
+        return pl.scan_parquet(  # pyright: ignore[reportOptionalMemberAccess]
+            self._path,
+        )
 
     def save(self, data: Any) -> None:
         """Save a DataFrame to the Parquet file.

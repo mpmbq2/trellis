@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal, cast
 
 import pyarrow as pa  # type: ignore[import-untyped]
 import pyarrow.csv as pa_csv  # type: ignore[import-untyped]
@@ -20,8 +20,10 @@ HAS_PANDAS = find_spec("pandas") is not None
 
 if HAS_POLARS:
     import polars as pl  # type: ignore[import-not-found]
+    from polars import LazyFrame
 else:
     pl = None  # type: ignore[misc,assignment]
+    LazyFrame = None  # type: ignore[misc,assignment]
 
 if HAS_PANDAS:
     import pandas as pd  # type: ignore[import-untyped]
@@ -89,14 +91,26 @@ class CSVDataset(AbstractDataset):
     # I/O operations
     # ------------------------------------------------------------------
 
-    def load(self, as_type: str = "polars") -> Any:
+    @staticmethod
+    def _normalize_encoding(encoding: str) -> str:
+        """Normalize encoding string for Polars compatibility."""
+        encoding_map: dict[str, str] = {
+            "utf-8": "utf8",
+            "utf8": "utf8",
+            "utf-8-lossy": "utf8-lossy",
+        }
+        return encoding_map.get(encoding.lower(), encoding)
+
+    def load(self, as_type: str = "polars", lazy: bool = False) -> Any:
         """Load data from the CSV file.
 
         Args:
             as_type: Output format - "polars" (default) or "pandas".
+            lazy: If True and as_type="polars", return a LazyFrame for
+                deferred execution (default: False).
 
         Returns:
-            A polars or pandas DataFrame containing the CSV data.
+            A polars DataFrame/LazyFrame or pandas DataFrame containing the CSV data.
 
         Raises:
             ImportError: If the requested library is not installed.
@@ -126,31 +140,81 @@ class CSVDataset(AbstractDataset):
             raise FileNotFoundError(f"CSV file not found: {self._path}")
 
         try:
-            # Read CSV using pyarrow
-            parse_options = pa_csv.ParseOptions(
-                delimiter=self._delimiter,
-            )
-
-            read_options = pa_csv.ReadOptions(
-                use_threads=True,
-                encoding=self._encoding,
-                autogenerate_column_names=not self._has_header,
-            )
-
-            table = pa_csv.read_csv(
-                self._path,
-                parse_options=parse_options,
-                read_options=read_options,
-            )
-
-            # Convert to requested type
             if as_type == "polars":
-                return pl.DataFrame(table)  # pyright: ignore[reportOptionalMemberAccess]
-            else:  # pandas
+                normalized_encoding = cast(
+                    Literal["utf8", "utf8-lossy"],
+                    self._normalize_encoding(self._encoding),
+                )
+                if lazy:
+                    return pl.scan_csv(  # pyright: ignore[reportOptionalMemberAccess]
+                        self._path,
+                        separator=self._delimiter,
+                        has_header=self._has_header,
+                        encoding=normalized_encoding,
+                    )
+                else:
+                    return pl.read_csv(  # pyright: ignore[reportOptionalMemberAccess]
+                        self._path,
+                        separator=self._delimiter,
+                        has_header=self._has_header,
+                        encoding=normalized_encoding,
+                    )
+            else:
+                parse_options = pa_csv.ParseOptions(
+                    delimiter=self._delimiter,
+                )
+
+                read_options = pa_csv.ReadOptions(
+                    use_threads=True,
+                    encoding=self._encoding,
+                    autogenerate_column_names=not self._has_header,
+                )
+
+                table = pa_csv.read_csv(
+                    self._path,
+                    parse_options=parse_options,
+                    read_options=read_options,
+                )
                 return table.to_pandas()
 
         except Exception as e:
             raise RuntimeError(f"Failed to load CSV from {self._path!r}: {e}") from e
+
+    def lazy_load(self) -> LazyFrame:  # type: ignore[override]
+        """Return a Polars LazyFrame for deferred execution.
+
+        This enables query optimization and memory-efficient processing
+        of large CSV files.
+
+        Returns:
+            A Polars LazyFrame representing the CSV data.
+
+        Raises:
+            ImportError: If polars is not installed.
+            ValueError: If path is not specified.
+            FileNotFoundError: If the file does not exist.
+        """
+        if not HAS_POLARS:
+            raise ImportError(
+                "polars is required to use lazy_load(). "
+                "Install with: pip install trellis[polars] or pip install polars"
+            )
+
+        if self._path is None:
+            raise ValueError("Path must be specified to load a dataset")
+
+        if not self.exists():
+            raise FileNotFoundError(f"CSV file not found: {self._path}")
+
+        normalized_encoding = cast(
+            Literal["utf8", "utf8-lossy"], self._normalize_encoding(self._encoding)
+        )
+        return pl.scan_csv(  # pyright: ignore[reportOptionalMemberAccess]
+            self._path,
+            separator=self._delimiter,
+            has_header=self._has_header,
+            encoding=normalized_encoding,
+        )
 
     def save(self, data: Any) -> None:
         """Save a DataFrame to the CSV file.
