@@ -16,20 +16,39 @@ The base type lives at `src/trellis/datasets/abstract.py`.
 - **Identity:** an optional string `location` (path, URI, or whatever that dataset type uses). Subclasses add their own constructor parameters (e.g. SQL connection settings) as needed.
 - **No registry on the ABC:** construct concrete types directly (`CSVDataset(...)`, etc.). If you need string names or YAML-driven setup, that belongs in a separate layer (e.g. a catalog), not baked into the base class.
 
-**Not on the abstract base:** SQL querying helpers, DataFrame conversion tables, metadata/versioning hooks, or “incremental” protocols. If a concrete class needs extra methods (`query`, partitions, append mode), it adds them; duck typing is fine. Shared helpers belong in **plain functions or small modules**, not on the ABC, unless several implementations truly share a stable protocol (decide that when the second implementation exists).
+**Not on the abstract base:** SQL querying helpers, DataFrame conversion tables, metadata/versioning hooks, or "incremental" protocols. If a concrete class needs extra methods (`query`, partitions, append mode), it adds them; duck typing is fine. Shared helpers belong in **plain functions or small modules**, not on the ABC, unless several implementations truly share a stable protocol (decide that when the second implementation exists).
+
+## Current status
+
+**Datasets** (read/write):
+
+| Dataset | Backend | Notes |
+|---------|---------|-------|
+| `CSVDataset` | polars, pandas | fsspec for remote storage |
+| `ParquetDataset` | polars, pandas | fsspec for remote storage |
+| `SQLDataset` | ibis, polars, pandas | DuckDB, PostgreSQL, SQLite, etc. via ibis |
+
+**Datasources** (read-only):
+
+| Datasource | Backend | Notes |
+|------------|---------|-------|
+| `SQLDatasource` | ibis, polars, pandas | Same backends as SQLDataset, no save |
+
+The `datasets` package is for data the pipeline owns (read/write), while `datasources` is for external or upstream data the pipeline consumes but never writes back to.
 
 ## Implementation order (near term)
 
-1. **Solidify `AbstractDataset`** — types, docstrings, `...` abstract bodies, tests.
-2. **`CSVDataset`** — first real I/O; establish patterns (e.g. PyArrow + fsspec).
-3. **`ParquetDataset`**
-4. **`SQLDataset`** (or similar for relational tables)
+1. **Solidify `AbstractDataset`** — types, docstrings, `...` abstract bodies, tests. ✅
+2. **`CSVDataset`** — first real I/O; establish patterns (e.g. PyArrow + fsspec). ✅
+3. **`ParquetDataset`** ✅
+4. **`SQLDataset`** (or similar for relational tables) ✅
+5. **`AbstractDatasource` / `SQLDatasource`** — read-only parallel to datasets. ✅
 
-Revisit design after that (JSON lines, DuckDB, catalogs, multi-file bundles, incremental loads, etc.). Do **not** treat a long wish list as committed work.
+Revisit design after that (JSON lines, DuckDB as first-class dataset, catalogs, multi-file bundles, incremental loads, etc.). Do **not** treat a long wish list as committed work.
 
 ## Future possibilities (not scheduled)
 
-Ideas that may or may not land: multi-file or composite datasets, append/incremental semantics, a named catalog over datasets, YAML config, lineage. Capture them in design discussions or issues when relevant—avoid baking them into the base class prematurely.
+Ideas that may or may not land: JSON/JSON Lines, multi-file or composite datasets, append/incremental semantics, a named catalog over datasets, YAML config, lineage, first-class Ibis Table dataset. Capture them in design discussions or issues when relevant—avoid baking them into the base class prematurely.
 
 ## Dependencies
 
