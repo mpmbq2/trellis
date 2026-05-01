@@ -24,8 +24,22 @@ class AbstractDataset(ABC):
         """
         self.location = location
 
+    def describe(self) -> dict[str, Any]:
+        """Return a JSON-serializable summary of this dataset's configuration.
+
+        Always includes ``"type"`` and ``"location"``. Subclasses should
+        override to add their own fields and to redact secrets (for example,
+        credentials embedded in a connection URL).
+
+        Must not perform I/O.
+        """
+        return {"type": self.__class__.__name__, "location": self.location}
+
     def __repr__(self) -> str:
-        return f"{self.__class__.__name__}(location={self.location!r})"
+        info = dict(self.describe())
+        cls = info.pop("type", self.__class__.__name__)
+        inner = ", ".join(f"{k}={v!r}" for k, v in info.items())
+        return f"{cls}({inner})"
 
     @abstractmethod
     def load(self) -> Any:

@@ -8,6 +8,7 @@ from ibis.expr.types import Table  # type: ignore
 import pandas as pd  # type: ignore
 import polars as pl  # type: ignore
 
+from trellis._url_utils import redact_url_password
 from trellis.datasets.abstract import AbstractDataset
 
 
@@ -162,5 +163,13 @@ class SQLDataset(AbstractDataset):
         """Return whether the table exists in the database."""
         return self._table_name in self._connection.list_tables()
 
-    def __repr__(self) -> str:
-        return f"{self.__class__.__name__}(location={self._location!r}, table_name={self._table_name!r})"
+    def describe(self) -> dict[str, Any]:
+        """Return a JSON-serializable summary of this dataset's configuration.
+
+        The connection URL has any embedded password redacted.
+        """
+        return {
+            "type": self.__class__.__name__,
+            "location": redact_url_password(self._location),
+            "table_name": self._table_name,
+        }
