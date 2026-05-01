@@ -81,6 +81,11 @@ def test_repr(csv_path):
     assert repr(ds) == f"CSVDataset(location={csv_path!r})"
 
 
+def test_describe(csv_path):
+    ds = CSVDataset(location=csv_path)
+    assert ds.describe() == {"type": "CSVDataset", "location": csv_path}
+
+
 def test_save_unsupported_type(csv_path):
     ds = CSVDataset(location=csv_path)
     with pytest.raises(TypeError, match="Unsupported data type"):

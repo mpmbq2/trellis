@@ -117,3 +117,31 @@ def test_repr(sql_datasource) -> None:
         f"SQLDatasource(location={sql_datasource._location!r}, table_name='test_table')"
     )
     assert repr(sql_datasource) == expected
+
+
+def test_describe_keys(sql_datasource) -> None:
+    described = sql_datasource.describe()
+    assert described == {
+        "type": "SQLDatasource",
+        "location": sql_datasource._location,
+        "table_name": "test_table",
+    }
+
+
+def test_describe_redacts_password() -> None:
+    ds = SQLDatasource.__new__(SQLDatasource)
+    ds._location = "postgres://alice:secret@host:5432/db"
+    ds._table_name = "users"
+    described = ds.describe()
+    assert "secret" not in described["location"]
+    assert "***" in described["location"]
+    assert described["table_name"] == "users"
+
+
+def test_repr_redacts_password() -> None:
+    ds = SQLDatasource.__new__(SQLDatasource)
+    ds._location = "postgres://alice:secret@host:5432/db"
+    ds._table_name = "users"
+    rendered = repr(ds)
+    assert "secret" not in rendered
+    assert "***" in rendered
