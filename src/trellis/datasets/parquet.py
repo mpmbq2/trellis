@@ -7,6 +7,11 @@ import pandas as pd  # type: ignore
 import polars as pl  # type: ignore
 
 from trellis.datasets.abstract import AbstractDataset
+from trellis.exceptions import (
+    DatasetLoadError,
+    DatasetNotFoundError,
+    DatasetSaveError,
+)
 
 
 class ParquetDataset(AbstractDataset):
@@ -44,13 +49,26 @@ class ParquetDataset(AbstractDataset):
 
         Returns:
             polars DataFrame or LazyFrame, or pandas DataFrame.
-        """
-        if backend == "polars":
-            if lazy:
-                return pl.scan_parquet(self._location)
-            return pl.read_parquet(self._location)
 
-        return pd.read_parquet(self._location)
+        Raises:
+            DatasetNotFoundError: If the Parquet file is not present at the location.
+            DatasetLoadError: If reading the Parquet fails for any other reason.
+        """
+        try:
+            if backend == "polars":
+                if lazy:
+                    return pl.scan_parquet(self._location)
+                return pl.read_parquet(self._location)
+
+            return pd.read_parquet(self._location)
+        except FileNotFoundError as e:
+            raise DatasetNotFoundError(
+                f"Parquet not found at {self._location!r}"
+            ) from e
+        except Exception as e:
+            raise DatasetLoadError(
+                f"Failed to load Parquet from {self._location!r}: {e}"
+            ) from e
 
     def save(self, data: Any) -> None:
         """Save data to the Parquet location.
@@ -59,15 +77,24 @@ class ParquetDataset(AbstractDataset):
 
         Args:
             data: A polars DataFrame/LazyFrame or pandas DataFrame.
+
+        Raises:
+            DatasetSaveError: If writing the Parquet fails.
         """
-        if isinstance(data, pl.DataFrame):
-            data.write_parquet(self._location)
-        elif isinstance(data, pl.LazyFrame):
-            data.sink_parquet(self._location)
-        elif isinstance(data, pd.DataFrame):
-            data.to_parquet(self._location, index=False)
-        else:
+        if not isinstance(data, (pl.DataFrame, pl.LazyFrame, pd.DataFrame)):
             raise TypeError(f"Unsupported data type: {type(data)}")
+
+        try:
+            if isinstance(data, pl.DataFrame):
+                data.write_parquet(self._location)
+            elif isinstance(data, pl.LazyFrame):
+                data.sink_parquet(self._location)
+            else:
+                data.to_parquet(self._location, index=False)
+        except Exception as e:
+            raise DatasetSaveError(
+                f"Failed to save Parquet to {self._location!r}: {e}"
+            ) from e
 
     def exists(self) -> bool:
         """Return whether the Parquet file exists at its location."""

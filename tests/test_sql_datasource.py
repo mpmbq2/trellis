@@ -6,6 +6,7 @@ import polars as pl
 import pytest
 
 from trellis.datasources import SQLDatasource
+from trellis.exceptions import DatasetNotFoundError
 
 
 @pytest.fixture
@@ -72,6 +73,16 @@ def test_load_default_backend_is_polars(sql_datasource, sample_data_polars) -> N
 def test_load_invalid_backend(sql_datasource) -> None:
     with pytest.raises(ValueError, match="Unsupported backend"):
         sql_datasource.load(backend="invalid")  # type: ignore[arg-type]
+
+
+def test_load_missing_table_raises_dataset_not_found(empty_sql_datasource) -> None:
+    with pytest.raises(DatasetNotFoundError):
+        empty_sql_datasource.load()
+
+
+def test_load_missing_table_is_also_filenotfound(empty_sql_datasource) -> None:
+    with pytest.raises(FileNotFoundError):
+        empty_sql_datasource.load()
 
 
 # -----------------------------------------------------------------------------

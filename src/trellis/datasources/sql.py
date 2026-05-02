@@ -6,6 +6,7 @@ import ibis  # type: ignore
 
 from trellis._url_utils import redact_url_password
 from trellis.datasources.abstract import AbstractDatasource
+from trellis.exceptions import DatasetLoadError, DatasetNotFoundError
 
 
 class SQLDatasource(AbstractDatasource):
@@ -67,17 +68,34 @@ class SQLDatasource(AbstractDatasource):
 
         Returns:
             polars DataFrame, pandas DataFrame, or ibis Table expression.
-        """
-        table_expr = self._connection.table(self._table_name)
 
-        if backend == "ibis":
-            return table_expr
-        elif backend == "polars":
-            return self._connection.to_polars(table_expr)
-        elif backend == "pandas":
-            return self._connection.to_pandas(table_expr)
-        else:
+        Raises:
+            DatasetNotFoundError: If the table does not exist in the database.
+            DatasetLoadError: If reading the table fails for any other reason.
+        """
+        if backend not in ("polars", "pandas", "ibis"):
             raise ValueError(f"Unsupported backend: {backend!r}")
+
+        if not self.exists():
+            raise DatasetNotFoundError(
+                f"Table {self._table_name!r} not found at "
+                f"{redact_url_password(self._location)!r}"
+            )
+
+        try:
+            table_expr = self._connection.table(self._table_name)
+
+            if backend == "ibis":
+                return table_expr
+            elif backend == "polars":
+                return self._connection.to_polars(table_expr)
+            else:
+                return self._connection.to_pandas(table_expr)
+        except Exception as e:
+            raise DatasetLoadError(
+                f"Failed to load table {self._table_name!r} from "
+                f"{redact_url_password(self._location)!r}: {e}"
+            ) from e
 
     def exists(self) -> bool:
         """Return whether the table exists in the database."""

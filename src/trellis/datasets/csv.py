@@ -7,6 +7,11 @@ import pandas as pd  # type: ignore
 import polars as pl  # type: ignore
 
 from trellis.datasets.abstract import AbstractDataset
+from trellis.exceptions import (
+    DatasetLoadError,
+    DatasetNotFoundError,
+    DatasetSaveError,
+)
 
 
 class CSVDataset(AbstractDataset):
@@ -44,13 +49,24 @@ class CSVDataset(AbstractDataset):
 
         Returns:
             polars DataFrame or LazyFrame, or pandas DataFrame.
-        """
-        if backend == "polars":
-            if lazy:
-                return pl.scan_csv(self._location)
-            return pl.read_csv(self._location)
 
-        return pd.read_csv(self._location)
+        Raises:
+            DatasetNotFoundError: If the CSV file is not present at the location.
+            DatasetLoadError: If reading the CSV fails for any other reason.
+        """
+        try:
+            if backend == "polars":
+                if lazy:
+                    return pl.scan_csv(self._location)
+                return pl.read_csv(self._location)
+
+            return pd.read_csv(self._location)
+        except FileNotFoundError as e:
+            raise DatasetNotFoundError(f"CSV not found at {self._location!r}") from e
+        except Exception as e:
+            raise DatasetLoadError(
+                f"Failed to load CSV from {self._location!r}: {e}"
+            ) from e
 
     def save(self, data: Any) -> None:
         """Save data to the CSV location.
@@ -59,15 +75,24 @@ class CSVDataset(AbstractDataset):
 
         Args:
             data: A polars DataFrame/LazyFrame or pandas DataFrame.
+
+        Raises:
+            DatasetSaveError: If writing the CSV fails.
         """
-        if isinstance(data, pl.DataFrame):
-            data.write_csv(self._location)
-        elif isinstance(data, pl.LazyFrame):
-            data.sink_csv(self._location)
-        elif isinstance(data, pd.DataFrame):
-            data.to_csv(self._location, index=False)
-        else:
+        if not isinstance(data, (pl.DataFrame, pl.LazyFrame, pd.DataFrame)):
             raise TypeError(f"Unsupported data type: {type(data)}")
+
+        try:
+            if isinstance(data, pl.DataFrame):
+                data.write_csv(self._location)
+            elif isinstance(data, pl.LazyFrame):
+                data.sink_csv(self._location)
+            else:
+                data.to_csv(self._location, index=False)
+        except Exception as e:
+            raise DatasetSaveError(
+                f"Failed to save CSV to {self._location!r}: {e}"
+            ) from e
 
     def exists(self) -> bool:
         """Return whether the CSV file exists at its location."""
