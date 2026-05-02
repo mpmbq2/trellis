@@ -6,6 +6,7 @@ import polars as pl
 import pytest
 
 from trellis.datasets import SQLDataset
+from trellis.exceptions import DatasetNotFoundError
 
 
 @pytest.fixture
@@ -226,3 +227,13 @@ def test_invalid_backend(sql_dataset, sample_data_polars):
 def test_invalid_if_exists(sql_dataset, sample_data_polars):
     with pytest.raises(ValueError, match="Invalid if_exists value"):
         sql_dataset.save(sample_data_polars, if_exists="invalid")
+
+
+def test_load_missing_table_raises_dataset_not_found(sql_dataset):
+    with pytest.raises(DatasetNotFoundError):
+        sql_dataset.load()
+
+
+def test_load_missing_table_is_also_filenotfound(sql_dataset):
+    with pytest.raises(FileNotFoundError):
+        sql_dataset.load()

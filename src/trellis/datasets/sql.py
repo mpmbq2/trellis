@@ -10,6 +10,11 @@ import polars as pl  # type: ignore
 
 from trellis._url_utils import redact_url_password
 from trellis.datasets.abstract import AbstractDataset
+from trellis.exceptions import (
+    DatasetLoadError,
+    DatasetNotFoundError,
+    DatasetSaveError,
+)
 
 
 class SQLDataset(AbstractDataset):
@@ -67,17 +72,34 @@ class SQLDataset(AbstractDataset):
 
         Returns:
             polars DataFrame, pandas DataFrame, or ibis Table expression.
-        """
-        table_expr = self._connection.table(self._table_name)
 
-        if backend == "ibis":
-            return table_expr
-        elif backend == "polars":
-            return self._connection.to_polars(table_expr)
-        elif backend == "pandas":
-            return self._connection.to_pandas(table_expr)
-        else:
+        Raises:
+            DatasetNotFoundError: If the table does not exist in the database.
+            DatasetLoadError: If reading the table fails for any other reason.
+        """
+        if backend not in ("polars", "pandas", "ibis"):
             raise ValueError(f"Unsupported backend: {backend}")
+
+        if not self.exists():
+            raise DatasetNotFoundError(
+                f"Table {self._table_name!r} not found at "
+                f"{redact_url_password(self._location)!r}"
+            )
+
+        try:
+            table_expr = self._connection.table(self._table_name)
+
+            if backend == "ibis":
+                return table_expr
+            elif backend == "polars":
+                return self._connection.to_polars(table_expr)
+            else:
+                return self._connection.to_pandas(table_expr)
+        except Exception as e:
+            raise DatasetLoadError(
+                f"Failed to load table {self._table_name!r} from "
+                f"{redact_url_password(self._location)!r}: {e}"
+            ) from e
 
     def save(
         self,
@@ -96,6 +118,10 @@ class SQLDataset(AbstractDataset):
                 - "fail": Raise an error if table exists.
                 - "replace": Drop and recreate the table (default).
                 - "append": Insert rows into existing table.
+
+        Raises:
+            FileExistsError: If ``if_exists="fail"`` and the table already exists.
+            DatasetSaveError: If writing the table fails.
         """
         # Handle lazy polars DataFrame by collecting
         if isinstance(data, pl.LazyFrame):
@@ -126,38 +152,45 @@ class SQLDataset(AbstractDataset):
         else:
             raise TypeError(f"Unsupported data type: {type(data)}")
 
-        if if_exists == "fail":
-            if self.exists():
-                raise FileExistsError(
-                    f"Table '{self._table_name}' already exists. "
-                    "Use if_exists='replace' or if_exists='append' to overwrite or append."
-                )
-            self._connection.create_table(
-                self._table_name,
-                obj=obj,
-                overwrite=False,
+        if if_exists not in ("fail", "replace", "append"):
+            raise ValueError(f"Invalid if_exists value: {if_exists}")
+
+        if if_exists == "fail" and self.exists():
+            raise FileExistsError(
+                f"Table '{self._table_name}' already exists. "
+                "Use if_exists='replace' or if_exists='append' to overwrite or append."
             )
-        elif if_exists == "replace":
-            self._connection.create_table(
-                self._table_name,
-                obj=obj,
-                overwrite=True,
-            )
-        elif if_exists == "append":
-            if not self.exists():
-                # Table doesn't exist, create it
+
+        try:
+            if if_exists == "fail":
                 self._connection.create_table(
                     self._table_name,
                     obj=obj,
                     overwrite=False,
                 )
-            else:
-                self._connection.insert(
+            elif if_exists == "replace":
+                self._connection.create_table(
                     self._table_name,
                     obj=obj,
+                    overwrite=True,
                 )
-        else:
-            raise ValueError(f"Invalid if_exists value: {if_exists}")
+            else:  # append
+                if not self.exists():
+                    self._connection.create_table(
+                        self._table_name,
+                        obj=obj,
+                        overwrite=False,
+                    )
+                else:
+                    self._connection.insert(
+                        self._table_name,
+                        obj=obj,
+                    )
+        except Exception as e:
+            raise DatasetSaveError(
+                f"Failed to save table {self._table_name!r} to "
+                f"{redact_url_password(self._location)!r}: {e}"
+            ) from e
 
     def exists(self) -> bool:
         """Return whether the table exists in the database."""
